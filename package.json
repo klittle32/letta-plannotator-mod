@@ -1,0 +1,17 @@
+{
+  "name": "letta-plannotator-mod",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc --noEmit",
+    "build": "bun build src/plannotator.ts --target=node --format=esm --outfile=dist/plannotator.mjs",
+    "validate:mod": "bun run build && node scripts/validate-mod.mjs",
+    "check": "bun run test && bun run typecheck && bun run validate:mod"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "latest"
+  }
+}
