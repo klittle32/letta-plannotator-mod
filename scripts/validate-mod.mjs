@@ -21,8 +21,9 @@ assert.deepEqual(registered, [
   "plannotator_annotate",
   "plannotator_review",
   "plannotator_annotate_last",
+  "plannotator_setup_goal",
 ]);
 dispose();
-assert.equal(disposals, 3, "all tool registrations must be disposed");
+assert.equal(disposals, 4, "all tool registrations must be disposed");
 
 console.log("Validated built mod under Node-compatible ESM.");

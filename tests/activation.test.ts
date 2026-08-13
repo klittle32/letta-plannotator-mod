@@ -24,7 +24,7 @@ describe("activation", () => {
     expect(registrations).toEqual([]);
   });
 
-  test("registers exactly the three Plannotator tools", () => {
+  test("registers exactly the four Plannotator tools", () => {
     const { host, registrations } = fakeHost(true);
 
     const dispose = activate(host);
@@ -33,12 +33,13 @@ describe("activation", () => {
       "plannotator_annotate",
       "plannotator_review",
       "plannotator_annotate_last",
+      "plannotator_setup_goal",
     ]);
     expect(typeof dispose).toBe("function");
   });
 
-  test("returns an idempotent disposer for all three registrations", () => {
-    const disposalCounts = [0, 0, 0];
+  test("returns an idempotent disposer for all four registrations", () => {
+    const disposalCounts = [0, 0, 0, 0];
     let registrationIndex = 0;
     const host: LettaHost = {
       capabilities: { tools: true },
@@ -57,7 +58,7 @@ describe("activation", () => {
     dispose?.();
     dispose?.();
 
-    expect(disposalCounts).toEqual([1, 1, 1]);
+    expect(disposalCounts).toEqual([1, 1, 1, 1]);
   });
 
   test("publishes strict schemas and ordinary approval policy", () => {
@@ -74,6 +75,9 @@ describe("activation", () => {
       });
     }
     expect(tools[0]?.parameters).toMatchObject({ required: ["target"] });
+    expect(tools.find(({ name }) => name === "plannotator_setup_goal")?.parameters).toMatchObject({
+      required: ["stage", "bundle_path"],
+    });
   });
 
   test("rolls back earlier registrations when activation fails", () => {

@@ -63,7 +63,7 @@ describe("plannotator_annotate", () => {
     }).find(({ name }) => name === "plannotator_annotate");
 
     await tool?.run({
-      args: { target: "report.html", gate: true, markdown: true, no_jina: true },
+      args: { target: "report.html", gate: true, markdown: true, no_jina: true, tailscale: true },
       cwd: "/repo",
       signal: new AbortController().signal,
     });
@@ -74,6 +74,7 @@ describe("plannotator_annotate", () => {
       "--gate",
       "--markdown",
       "--no-jina",
+      "--tailscale",
       "--json",
     ]);
   });

@@ -37,7 +37,7 @@ describe("plannotator_annotate_last", () => {
     expect(result).toEqual({ status: "success", content: '{"decision":"approved"}' });
   });
 
-  test("adds the approval gate when requested", async () => {
+  test("adds the approval gate and tailnet publishing when requested", async () => {
     const requests: Array<{ args: string[] }> = [];
     const tool = createPlannotatorTools({
       runner: async (request) => {
@@ -47,7 +47,7 @@ describe("plannotator_annotate_last", () => {
     }).find(({ name }) => name === "plannotator_annotate_last");
 
     await tool?.run({
-      args: { gate: true },
+      args: { gate: true, tailscale: true },
       cwd: "/repo",
       signal: new AbortController().signal,
       conversation: {
@@ -57,7 +57,13 @@ describe("plannotator_annotate_last", () => {
       },
     });
 
-    expect(requests[0]?.args).toEqual(["annotate-last", "--stdin", "--gate", "--json"]);
+    expect(requests[0]?.args).toEqual([
+      "annotate-last",
+      "--stdin",
+      "--gate",
+      "--tailscale",
+      "--json",
+    ]);
   });
 
   test("returns no_assistant_message without launching when history has no rendered response", async () => {

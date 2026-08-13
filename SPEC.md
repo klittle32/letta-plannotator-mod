@@ -17,7 +17,7 @@ The mod is not intended for unattended cloud sandboxes or remote channel listene
 
 When `PLANNOTATOR_BIN` is set, it must be an absolute path and replaces ambient `PATH` lookup. This is the recommended configuration for Desktop/service contexts or machines whose `PATH` may contain untrusted writable directories.
 
-Plannotator 0.23.1 is the minimum verified contract. The mod does not run a version probe; later compatible versions work normally, while incompatible JSON output degrades safely to `invalid_json`.
+Plannotator 0.27.0 is the verified contract. The mod does not run a version probe; later compatible versions work normally, while incompatible JSON output degrades safely to `invalid_json`.
 
 ## Public tools
 
@@ -31,14 +31,15 @@ Arguments:
 - `gate` (optional boolean, default `false`): Show Plannotator's approval control.
 - `markdown` (optional boolean, default `false`): Convert HTML input to Markdown.
 - `no_jina` (optional boolean, default `false`): Fetch URL content without Jina Reader.
+- `tailscale` (optional boolean, default `false`): Publish the browser session over the operator's Tailscale tailnet.
 
 Invocation:
 
 ```text
-plannotator annotate <target> [--gate] [--markdown] [--no-jina] --json
+plannotator annotate <target> [--gate] [--markdown] [--no-jina] [--tailscale] --json
 ```
 
-The deterministic argument order is `annotate`, target, `--gate` when requested, `--markdown` when requested, `--no-jina` when requested, then `--json`.
+The deterministic argument order is `annotate`, target, `--gate` when requested, `--markdown` when requested, `--no-jina` when requested, `--tailscale` when requested, then `--json`.
 
 The command runs with the active Letta working directory as its cwd. Relative paths therefore resolve exactly as they would in the user's terminal.
 
@@ -51,16 +52,18 @@ Open Plannotator's code-review UI for the active repository or a pull request / 
 Arguments:
 
 - `url` (optional string): GitHub pull request or GitLab merge request URL. Omit it to review local changes in the active working directory.
-- `force_git` (optional boolean, default `false`): Pass `--git` to bypass VCS auto-detection.
+- `force_git` (optional boolean, default `false`): Backward-compatible alias that passes `--git`.
+- `vcs` (optional `auto | git | gitbutler`, default `auto`): Select VCS auto-detection, Git, or GitButler. GitButler requires a compatible local `but` executable. `force_git: true` conflicts with any explicit `vcs` value other than `git`.
 - `local_checkout` (optional boolean): For URL reviews, pass `--local` when `true` or `--no-local` when `false`. Omit to use Plannotator's default. It is invalid when `url` is omitted.
+- `tailscale` (optional boolean, default `false`): Publish the browser session over the operator's Tailscale tailnet.
 
 Invocation:
 
 ```text
-plannotator review [--git] [--local | --no-local] [url]
+plannotator review [--git | --gitbutler] [--local | --no-local] [--tailscale] [url]
 ```
 
-The deterministic argument order is `review`, `--git` when requested, `--local` or `--no-local` when requested, then the URL. `force_git` is allowed with a URL and passed through for Plannotator to interpret. A provided URL must parse as HTTP(S); Plannotator remains responsible for deciding whether it identifies a supported PR or MR.
+The deterministic argument order is `review`, the selected VCS flag, `--local` or `--no-local` when requested, `--tailscale` when requested, then the URL. A provided URL must parse as HTTP(S); Plannotator remains responsible for deciding whether it identifies a supported PR or MR.
 
 The tool returns Plannotator's feedback or approval output as text.
 
@@ -71,6 +74,7 @@ Open the most recent rendered assistant text from the active Letta conversation 
 Arguments:
 
 - `gate` (optional boolean, default `false`): Show Plannotator's approval control.
+- `tailscale` (optional boolean, default `false`): Publish the browser session over the operator's Tailscale tailnet.
 
 Behavior:
 
@@ -83,10 +87,27 @@ Behavior:
 Invocation:
 
 ```text
-plannotator annotate-last --stdin [--gate] --json
+plannotator annotate-last --stdin [--gate] [--tailscale] --json
 ```
 
 The tool must not ask Plannotator to discover Claude Code, Codex, or other harness session logs.
+
+### `plannotator_setup_goal`
+
+Open one browser stage for an existing goal-setup JSON bundle and return the submitted JSON to Letta.
+
+Arguments:
+
+- `stage` (required `interview | facts`): Goal-setup stage to open.
+- `bundle_path` (required string): Existing bundle path, resolved from the active Letta cwd unless absolute.
+
+Invocation:
+
+```text
+plannotator setup-goal <stage> <bundle_path> --json
+```
+
+Reject empty paths and paths beginning with `-`. Successful stdout must decode to one JSON object; preserve valid stdout exactly in the Letta result. The mod does not write result files or derive goal-package Markdown. Those remain agent workflow responsibilities.
 
 ## Decision result contract
 
@@ -105,7 +126,7 @@ For JSON-producing annotation commands, parse stdout and return a Letta-native m
 
 Stdout may contain surrounding whitespace but must decode to exactly one JSON object. `decision` must be one of the three literals above. `feedback`, when present, must be a string; an annotated decision must include it, and an empty annotated feedback string is preserved as `""`. Unknown fields are ignored. Multiple JSON values, arrays, missing decisions, unknown decisions, and invalid feedback types return `invalid_json`.
 
-Plannotator 0.23.1 exits successfully for all three decisions. The mod must determine the outcome from JSON content, never from exit code alone.
+Plannotator 0.27.0 exits successfully for all three annotation decisions. The mod must determine the outcome from JSON content, never from exit code alone.
 
 Code-review output is currently plaintext and should be returned as:
 
@@ -117,6 +138,8 @@ Code-review output is currently plaintext and should be returned as:
 ```
 
 Review stdout is preserved exactly, including an empty string or trailing newline, subject only to the process output limit.
+
+Goal-setup output uses the same Letta-native outer result and preserves the validated JSON stdout as `content`. Its evolving interview/facts fields are not forced through the annotation decision schema.
 
 ## Error contract
 
@@ -162,6 +185,7 @@ Only an `ENOENT` launch error maps to `plannotator_not_found`. Permission denial
 
 - Each tool opens a browser and waits for human interaction, so it is not parallel-safe.
 - Tool descriptions must say they are for explicit Plannotator review requests. The model should not open Plannotator merely because review might be useful.
+- Tailscale publication must be an explicit approved argument because it exposes the loopback browser session to the operator's tailnet.
 - Register every tool with `requiresApproval: true` and do not set `approvalPolicy: "alwaysAsk"`; this uses ordinary configurable Letta tool approval while preserving the browser as the human review boundary.
 - Do not close, edit, or overwrite the reviewed target.
 - Do not automatically execute implementation work after an approval. Return the decision to the active model, which decides the next conversational step.
@@ -176,7 +200,7 @@ Only an `ENOENT` launch error maps to `plannotator_not_found`. Permission denial
 
 Every tool schema must be an object schema with descriptions, explicit required fields, and `additionalProperties: false`. Optional booleans are omitted to select defaults; JSON Schema defaults are descriptive only and must not be required from the caller.
 
-Activation must collect all three tool-registration disposers and return one idempotent cleanup function. Reload cleanup calls every registration disposer exactly once and never launches Plannotator.
+Activation must collect all four tool-registration disposers and return one idempotent cleanup function. Reload cleanup calls every registration disposer exactly once and never launches Plannotator.
 
 ## Out of scope
 
@@ -184,12 +208,13 @@ Activation must collect all three tool-registration disposers and return one ide
 - A custom Letta panel or embedded browser.
 - Plannotator installation or updates.
 - Plannotator archive, session browser, or compound-analysis wrappers.
+- Copying, rewriting, or intercepting installed Plannotator skills.
 - Remote-browser tunneling or Plannotator sharing configuration.
 - Reimplementation of Plannotator's UI or decision storage.
 
 ## Acceptance criteria
 
-1. The mod registers exactly the three specified tools when tool capability is available.
+1. The mod registers exactly the four specified tools when tool capability is available.
 2. No tools are registered when the host lacks tool capability.
 3. Activation returns an idempotent disposer that invokes each registration disposer exactly once.
 4. Annotate arguments map to the exact CLI argument array and use the active cwd.
@@ -203,3 +228,5 @@ Activation must collect all three tool-registration disposers and return one ide
 12. Tests exercise behavior through exported public functions and the registered tool handlers, with the process boundary replaced by a fake executable or injected runner.
 13. The repository documents agent-scoped and computer-scoped installation on macOS/Linux and Windows.
 14. The complete test suite, typecheck, and mod-load validation pass.
+15. Goal setup maps interview/facts bundles to the exact CLI argument contract, validates object JSON, and leaves artifact writing to the calling workflow.
+16. Tailscale and GitButler options are explicit, schema-bound, and covered by argument-mapping tests.

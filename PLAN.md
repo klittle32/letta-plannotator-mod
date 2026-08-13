@@ -2,6 +2,8 @@
 
 > Implemented 2026-08-05. The final gate runs public-interface tests, real child-process fixtures, TypeScript typechecking, a Node-targeted build, and Node-compatible mod activation validation through `bun run check`.
 
+> Extended for Plannotator 0.27.0 on 2026-08-12. The additive slice introduces the typed `plannotator_setup_goal` interview/facts bridge, explicit Tailscale publishing options, and GitButler selection while leaving upstream skills untouched.
+
 This plan implements [SPEC.md](SPEC.md) as a sequence of small vertical slices. Every behavioral task follows one red-green-refactor cycle: add one failing public-interface test, run it to confirm the intended failure, make the smallest implementation pass, then refactor only while the suite is green.
 
 ## Public implementation shape
@@ -9,7 +11,7 @@ This plan implements [SPEC.md](SPEC.md) as a sequence of small vertical slices. 
 The single production module will export:
 
 - `activate(letta)` as the default Letta mod entry point.
-- `createPlannotatorTools(dependencies?)` to construct the three tool definitions for tests and activation.
+- `createPlannotatorTools(dependencies?)` to construct the four tool definitions for tests and activation.
 - `runPlannotator(request, dependencies?)` as the process-boundary adapter.
 - `extractLatestAssistantText(history)` for the Letta-aware annotate-last behavior.
 
@@ -29,8 +31,8 @@ Completion signal: Bun can discover tests and TypeScript can load the production
 
 1. RED: Add one test showing activation registers no tools when `letta.capabilities.tools` is false.
 2. GREEN: Add the minimal capability guard.
-3. RED: Add one test showing activation registers exactly three named tools when tool capability exists.
-4. GREEN: Register minimal definitions for `plannotator_annotate`, `plannotator_review`, and `plannotator_annotate_last`.
+3. RED: Add one test showing activation registers the expected named tools when tool capability exists.
+4. GREEN: Register the initial definitions for `plannotator_annotate`, `plannotator_review`, and `plannotator_annotate_last`; the Plannotator 0.27 extension adds `plannotator_setup_goal`.
 5. REFACTOR: Centralize tool construction while keeping both tests green.
 
 Completion signal: activation has no startup side effects and the public tool surface is exact.
@@ -121,7 +123,7 @@ Completion signal: the production adapter works without a shell and cancels clea
 
 1. Run the full Bun test suite.
 2. Run TypeScript typecheck.
-3. Load the module in a small fake Letta host and verify the three schemas are object schemas with descriptions and no unknown properties.
+3. Load the module in a small fake Letta host and verify every registered schema is an object schema with descriptions and no unknown properties.
 4. Verify each tool is non-parallel-safe and uses ordinary approval.
 5. Run `letta mods list --agent "$AGENT_ID"` after agent-scoped installation to confirm discovery.
 
@@ -137,7 +139,7 @@ Write `README.md` only after the behavior is final. Include:
 4. Agent-scoped installation on Windows PowerShell.
 5. Optional computer-scoped installation on both platforms.
 6. `/reload` and tool-discovery verification.
-7. Example natural-language requests for all three tools.
+7. Example natural-language requests for all four tools.
 8. Browser/execution-computer boundary for local, Desktop, remote, and cloud sessions.
 9. Troubleshooting for missing CLI, PATH differences, dismissed sessions, invalid JSON, and mod diagnostics.
 10. Development commands and repository structure.

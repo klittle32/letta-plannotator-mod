@@ -1,6 +1,6 @@
 # Letta Plannotator Mod
 
-A Letta Code mod that turns the local [Plannotator](https://github.com/backnotprop/plannotator) CLI into three agent-callable review tools.
+A Letta Code mod that turns the local [Plannotator](https://github.com/backnotprop/plannotator) CLI into four agent-callable review tools.
 
 The mod keeps the boundary simple: Letta starts Plannotator only after ordinary tool approval, Plannotator opens its local browser UI, and the submitted decision or feedback returns to the active Letta conversation.
 
@@ -11,13 +11,14 @@ The mod keeps the boundary simple: Letta starts Plannotator only after ordinary 
 | `plannotator_annotate` | Annotate a file, folder, HTML document, plain-text document, or HTTP(S) URL. Supports Plannotator approval gates. |
 | `plannotator_review` | Review local VCS changes or a GitHub pull request / GitLab merge request URL. |
 | `plannotator_annotate_last` | Annotate the latest rendered assistant response from the active Letta conversation. |
+| `plannotator_setup_goal` | Run the interview or facts stage for an existing Plannotator goal-setup JSON bundle. |
 
 The third tool is Letta-specific. It reads the current conversation through the mod API and sends only rendered assistant text to `plannotator annotate-last --stdin`; it does not ask Plannotator to inspect Claude Code or Codex session logs.
 
 ## Requirements
 
-- Letta Code with mod tools. This repository was developed and validated with Letta Code 0.30.6.
-- Plannotator 0.23.1 or a later version compatible with its `--json` decision format.
+- Letta Code with mod tools. This version was developed against Letta Code 0.30.19.
+- Plannotator 0.27.0 or a later version compatible with its documented command and JSON contracts.
 - Plannotator installed on every computer where the tools will run.
 
 Verify Plannotator first:
@@ -38,7 +39,10 @@ plannotator --help
 
 Agent-scoped mods live in the agent's git-backed memory and follow that agent between computers. This is the recommended installation for Johnny5.
 
-The source file must be committed inside MemFS before it can sync to another computer.
+`$MEMORY_DIR/mods/plannotator.ts` is the agent's installed local copy of this
+mod. The repository remains the development source; installation copies its
+single production file into MemFS. The copy must be committed inside MemFS
+before it can sync to another computer.
 
 ### macOS or Linux
 
@@ -106,7 +110,7 @@ After installing or updating the mod, run this inside Letta Code:
 /reload
 ```
 
-The three tools become available on the next model turn. If a mod prevents normal startup, launch Letta without mods:
+The four tools become available on the next model turn. If a mod prevents normal startup, launch Letta without mods:
 
 ```bash
 letta --no-mods
@@ -163,7 +167,69 @@ Put your last response in Plannotator so I can mark it up.
 Gate SPEC.md in Plannotator before implementing it.
 ```
 
-All three tools require ordinary Letta tool approval and are intentionally marked non-parallel-safe. They should be called only when the user explicitly requests Plannotator.
+```text
+Open goals/catalog-search/interview.json in Plannotator's goal-setup interview.
+```
+
+All four tools require ordinary Letta tool approval and are intentionally marked non-parallel-safe. They should be called only when the user explicitly requests Plannotator.
+
+The annotation, review, and latest-response tools can optionally publish the browser session over the operator's Tailscale tailnet. Code review can explicitly select Git or GitButler; the latter requires a compatible local `but` executable.
+
+## Relationship to Plannotator skills
+
+This mod and the upstream Plannotator skills have separate jobs:
+
+- Skills define workflows such as visual explainers, compound analysis, and goal-package construction.
+- This mod provides typed Letta tools for the browser/process boundary.
+
+The mod does not copy, rewrite, or intercept installed skills. Plannotator's
+upstream skills currently launch the CLI through Bash, so a Letta agent that
+should use this mod needs agent-scoped copies adapted to call the typed tools.
+
+### Install the upstream skills
+
+The standard Plannotator installer supplies the three core skills:
+`plannotator-annotate`, `plannotator-review`, and `plannotator-last`. Plannotator's
+official skill-management documentation uses the Agent Skills CLI for the three
+extras:
+
+```bash
+npx skills add backnotprop/plannotator/apps/skills/extra --global
+```
+
+In the interactive host selector, install the extras into the shared Agent
+Skills location (`~/.agents/skills`; selecting Codex provides that copy). See
+[Install and Manage Plannotator Skills](https://docs.plannotator.ai/open-source/start/skills)
+for specific-skill and update commands.
+
+### Ask a Letta agent to install and adapt them
+
+After the core and extra skills exist under `~/.agents/skills`, give the Letta
+agent that owns the mod this prompt:
+
+```text
+Install all six Plannotator skills from ~/.agents/skills/plannotator-* into your
+agent-scoped $MEMORY_DIR/skills directory, preserving every bundled resource.
+
+Adapt only the MemFS copies so they use the installed Plannotator mod tools
+instead of Bash or direct `plannotator` CLI commands:
+
+- plannotator-annotate -> plannotator_annotate
+- plannotator-review -> plannotator_review
+- plannotator-last -> plannotator_annotate_last
+- plannotator-setup-goal -> plannotator_setup_goal and plannotator_annotate
+- plannotator-visual-explainer -> plannotator_annotate
+- plannotator-compound -> plannotator_annotate for report delivery
+
+Do not silently fall back to Bash if a mod tool is unavailable; tell me to
+reload or repair the mod. Update any bundled skill tests that assert the old CLI
+instructions, validate all six skills, commit the MemFS changes with your agent
+authorship, and tell me to run /reload.
+```
+
+This intentionally creates small agent-local adaptations. Updating the upstream
+skills later may overwrite or conflict with them, so reapply and revalidate the
+tool mapping after an upstream skill update.
 
 ## Where the browser opens
 
@@ -178,6 +244,7 @@ An agent-scoped mod follows Johnny5 between the Mac and Windows machines, but th
 ## Safety behavior
 
 - User values are passed as process arguments with `shell: false`; they are never interpolated into a shell command.
+- Tailscale publishing occurs only when the approved tool call explicitly sets `tailscale: true`.
 - Annotation targets beginning with `-` are rejected to prevent CLI option injection. Use `./-filename` or an absolute path for a legitimate filename beginning with a hyphen.
 - Each captured stdout/stderr stream is limited to 1 MiB.
 - Annotate-last input is limited to 1 MiB of UTF-8.
@@ -197,7 +264,7 @@ The Letta process cannot find the CLI. Verify `plannotator --version` in the sam
 
 ### `invalid_json`
 
-The installed Plannotator returned an incompatible decision record. Check `plannotator --version` and update the CLI. The verified contract is Plannotator 0.23.1.
+The installed Plannotator returned an incompatible decision record. Check `plannotator --version` and update the CLI. The verified contract is Plannotator 0.27.0.
 
 ### Browser session closed / dismissed
 

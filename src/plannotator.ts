@@ -173,6 +173,10 @@ function toolError(code: string, message: string): ToolErrorResult {
 }
 
 const INVALID_JSON_RESULT = toolError("invalid_json", "Plannotator returned an invalid decision.");
+const INVALID_GOAL_JSON_RESULT = toolError(
+  "invalid_json",
+  "Plannotator returned invalid goal-setup JSON.",
+);
 
 function parseDecision(stdout: string): ModToolResult {
   let parsed: unknown;
@@ -194,6 +198,17 @@ function parseDecision(stdout: string): ModToolResult {
     return successResult({ decision: "annotated", feedback: decision.feedback });
   }
   return INVALID_JSON_RESULT;
+}
+
+function parseGoalSetupResult(stdout: string): ModToolResult {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(stdout.trim());
+  } catch {
+    return INVALID_GOAL_JSON_RESULT;
+  }
+  if (!isRecord(parsed) || Array.isArray(parsed)) return INVALID_GOAL_JSON_RESULT;
+  return successText(stdout);
 }
 
 function errorCode(error: unknown): unknown {
@@ -269,7 +284,7 @@ export function createPlannotatorTools(dependencies: PlannotatorDependencies = {
     {
       name: "plannotator_annotate",
       description:
-        "Only when the user explicitly requests Plannotator: open a local browser review that may read the target file/folder or fetch the target URL.",
+        "Only when the user explicitly requests Plannotator: open a browser annotation session for a file, folder, or URL. Return exact feedback for requested changes; preserve feedback attached to approval as guidance; report dismissal without inventing feedback.",
       parameters: {
         type: "object",
         properties: {
@@ -277,6 +292,10 @@ export function createPlannotatorTools(dependencies: PlannotatorDependencies = {
           gate: { type: "boolean", description: "Show Plannotator's approval control." },
           markdown: { type: "boolean", description: "Convert HTML input to Markdown." },
           no_jina: { type: "boolean", description: "Fetch URL content without Jina Reader." },
+          tailscale: {
+            type: "boolean",
+            description: "Publish the review session over the operator's Tailscale tailnet.",
+          },
         },
         required: ["target"],
         additionalProperties: false,
@@ -298,6 +317,7 @@ export function createPlannotatorTools(dependencies: PlannotatorDependencies = {
         if (context.args.gate === true) args.push("--gate");
         if (context.args.markdown === true) args.push("--markdown");
         if (context.args.no_jina === true) args.push("--no-jina");
+        if (context.args.tailscale === true) args.push("--tailscale");
         args.push("--json");
         const result = await invokeRunner(runner, {
           args,
@@ -313,15 +333,24 @@ export function createPlannotatorTools(dependencies: PlannotatorDependencies = {
     {
       name: "plannotator_review",
       description:
-        "Only when the user explicitly requests Plannotator: open a local browser review of the active VCS changes or supplied PR/MR URL.",
+        "Only when the user explicitly requests Plannotator: open a browser code review of active VCS changes or a supplied PR/MR URL. Tailscale mode publishes the session over the operator's tailnet.",
       parameters: {
         type: "object",
         properties: {
           url: { type: "string", description: "Optional GitHub PR or GitLab MR URL." },
           force_git: { type: "boolean", description: "Force git instead of VCS auto-detection." },
+          vcs: {
+            type: "string",
+            enum: ["auto", "git", "gitbutler"],
+            description: "VCS selection. GitButler requires a compatible local 'but' executable.",
+          },
           local_checkout: {
             type: "boolean",
             description: "For URL reviews, prepare a local checkout when true or use diff-only mode when false.",
+          },
+          tailscale: {
+            type: "boolean",
+            description: "Publish the review session over the operator's Tailscale tailnet.",
           },
         },
         additionalProperties: false,
@@ -345,10 +374,19 @@ export function createPlannotatorTools(dependencies: PlannotatorDependencies = {
         if (context.args.local_checkout !== undefined && typeof url !== "string") {
           return toolError("invalid_arguments", "local_checkout requires a review URL");
         }
+        const vcs = context.args.vcs;
+        if (vcs !== undefined && vcs !== "auto" && vcs !== "git" && vcs !== "gitbutler") {
+          return toolError("invalid_arguments", "vcs must be auto, git, or gitbutler");
+        }
+        if (context.args.force_git === true && vcs !== undefined && vcs !== "git") {
+          return toolError("invalid_arguments", `force_git conflicts with vcs='${String(vcs)}'`);
+        }
         const args = ["review"];
-        if (context.args.force_git === true) args.push("--git");
+        if (context.args.force_git === true || vcs === "git") args.push("--git");
+        if (vcs === "gitbutler") args.push("--gitbutler");
         if (context.args.local_checkout === true) args.push("--local");
         if (context.args.local_checkout === false) args.push("--no-local");
+        if (context.args.tailscale === true) args.push("--tailscale");
         if (typeof url === "string") args.push(url);
         const result = await invokeRunner(runner, {
           args,
@@ -364,11 +402,15 @@ export function createPlannotatorTools(dependencies: PlannotatorDependencies = {
     {
       name: "plannotator_annotate_last",
       description:
-        "Only when the user explicitly requests Plannotator: send the latest rendered Letta assistant response to the local Plannotator browser review.",
+        "Only when the user explicitly requests Plannotator: annotate the latest rendered Letta assistant response. Return exact requested changes, preserve approval notes as guidance, and report dismissal without inventing feedback.",
       parameters: {
         type: "object",
         properties: {
           gate: { type: "boolean", description: "Show Plannotator's approval control." },
+          tailscale: {
+            type: "boolean",
+            description: "Publish the review session over the operator's Tailscale tailnet.",
+          },
         },
         additionalProperties: false,
       },
@@ -402,6 +444,7 @@ export function createPlannotatorTools(dependencies: PlannotatorDependencies = {
         }
         const args = ["annotate-last", "--stdin"];
         if (context.args.gate === true) args.push("--gate");
+        if (context.args.tailscale === true) args.push("--tailscale");
         args.push("--json");
         const result = await invokeRunner(runner, {
           args,
@@ -413,6 +456,54 @@ export function createPlannotatorTools(dependencies: PlannotatorDependencies = {
         const processError = completedProcessError(result);
         if (processError) return processError;
         return parseDecision(result.stdout);
+      },
+    },
+    {
+      name: "plannotator_setup_goal",
+      description:
+        "Only when the user explicitly requests Plannotator goal setup: open the interview or facts browser stage for an existing JSON bundle and return its submitted JSON. Wait for the human session to finish; do not restart it merely because it is idle.",
+      parameters: {
+        type: "object",
+        properties: {
+          stage: {
+            type: "string",
+            enum: ["interview", "facts"],
+            description: "Goal-setup browser stage to open.",
+          },
+          bundle_path: {
+            type: "string",
+            description: "Path to the interview or facts JSON bundle, relative to the active cwd or absolute.",
+          },
+        },
+        required: ["stage", "bundle_path"],
+        additionalProperties: false,
+      },
+      requiresApproval: true,
+      parallelSafe: false,
+      async run(context) {
+        const stage = context.args.stage;
+        if (stage !== "interview" && stage !== "facts") {
+          return toolError("invalid_arguments", "stage must be interview or facts");
+        }
+        const bundlePath = context.args.bundle_path;
+        if (typeof bundlePath !== "string" || bundlePath.trim() === "") {
+          return toolError("invalid_arguments", "bundle_path must be a non-empty string");
+        }
+        if (bundlePath.startsWith("-")) {
+          return toolError(
+            "invalid_arguments",
+            "bundle_path must not begin with '-' (use './' or an absolute path for such filenames)",
+          );
+        }
+        const result = await invokeRunner(runner, {
+          args: ["setup-goal", stage, bundlePath, "--json"],
+          cwd: context.cwd,
+          signal: context.signal,
+        });
+        if ("status" in result) return result;
+        const processError = completedProcessError(result);
+        if (processError) return processError;
+        return parseGoalSetupResult(result.stdout);
       },
     },
   ];
